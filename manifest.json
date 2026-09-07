@@ -1,0 +1,15 @@
+{
+  "name": "Douk Boutique",
+  "short_name": "Douk Boutique",
+  "description": "Gestion de stock, commandes et achats fournisseurs",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#EDE7DA",
+  "theme_color": "#2F6F5E",
+  "orientation": "portrait-primary",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
