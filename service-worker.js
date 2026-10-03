@@ -1,4 +1,4 @@
-const CACHE_NAME = 'registre-cache-v3';
+const CACHE_NAME = 'registre-cache-v7';
 const FILES_TO_CACHE = [
   './',
   './index.html',
