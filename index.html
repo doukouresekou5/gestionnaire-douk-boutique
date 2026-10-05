@@ -311,6 +311,26 @@ tr.row-faible td:first-child,tr.row-rupture td:first-child{box-shadow:inset 3px 
   </div>
 </div>
 
+<!-- MODAL: crédits supplémentaires d'une personne -->
+<div class="overlay" id="overlay-prise">
+  <div class="modal">
+    <h2 id="k-title">Crédits</h2>
+    <input type="hidden" id="k-id">
+    <div id="k-summary" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px;"></div>
+    <label style="display:block;font-size:12.5px;font-weight:600;color:var(--ink-soft);margin-bottom:5px;">Historique des crédits pris</label>
+    <div class="items-editor" id="k-list"></div>
+    <div class="field-row">
+      <div class="field"><label>Date</label><input id="k-date" type="date"></div>
+      <div class="field"><label>Montant pris</label><input id="k-montant" type="number" min="0" step="any" placeholder="Ex. 20000"></div>
+    </div>
+    <div class="field"><label>Motif</label><input id="k-motif" placeholder="Ex. UV, marchandise"></div>
+    <div class="modal-actions">
+      <button class="btn ghost" onclick="closeModal('overlay-prise')">Fermer</button>
+      <button class="btn" onclick="addPrise()">Ajouter le crédit</button>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL: crédit -->
 <div class="overlay" id="overlay-credit">
   <div class="modal">
@@ -322,10 +342,11 @@ tr.row-faible td:first-child,tr.row-rupture td:first-child{box-shadow:inset 3px 
     </div>
     <div class="field"><label>Motif</label><input id="c-motif" placeholder="Ex. Marchandise, avance"></div>
     <div class="field-row">
-      <div class="field"><label>Montant pris</label><input id="c-pris" type="number" min="0" step="any" oninput="recalcCredit()"></div>
+      <div class="field"><label id="c-pris-label">Montant pris</label><input id="c-pris" type="number" min="0" step="any" oninput="recalcCredit()"></div>
       <div class="field"><label id="c-donne-label">Montant donné (acompte)</label><input id="c-donne" type="number" min="0" step="any" value="0" oninput="recalcCredit()"></div>
     </div>
     <div class="field"><label>Restant</label><input id="c-rest" readonly style="background:#EEF2F0;color:var(--ink-soft);"></div>
+    <button class="add-line" id="c-add-prise" style="display:none;margin-bottom:6px;" onclick="goToPrises()">+ Ajouter un crédit</button>
     <button class="add-line" id="c-add-versement" style="display:none;margin-bottom:6px;" onclick="goToVersements()">+ Ajouter un versement</button>
     <div class="modal-actions">
       <button class="btn ghost" onclick="closeModal('overlay-credit')">Annuler</button>
@@ -1322,20 +1343,25 @@ function renderDashboardChart(){
 // ================= CRÉDITS =================
 // un crédit = nom, date, motif, montant pris + une liste de versements (le montant donné est la somme des versements)
 function creditDonne(c){ return (c.versements||[]).reduce((s,v)=>s+(Number(v.montant)||0),0); }
-function creditRest(c){ return Math.max(0, (Number(c.pris)||0) - creditDonne(c)); }
+function creditPris(c){ return Array.isArray(c.prises) ? c.prises.reduce((s,v)=>s+(Number(v.montant)||0),0) : (Number(c.pris)||0); }
+function creditRest(c){ return Math.max(0, creditPris(c) - creditDonne(c)); }
 function migrateCredits(){
   if(!Array.isArray(state.credits)) state.credits = [];
   state.credits.forEach(c=>{
     if(!Array.isArray(c.versements)){
       c.versements = (Number(c.donne)||0) > 0 ? [{id:uid(), date:c.date, montant:Number(c.donne)}] : [];
     }
+    if(!Array.isArray(c.prises)){
+      c.prises = (Number(c.pris)||0) > 0 ? [{id:uid(), date:c.date, montant:Number(c.pris), motif:c.motif||''}] : [];
+    }
+    c.pris = creditPris(c);
     c.donne = creditDonne(c);
   });
 }
 function recalcCredit(){
-  const pris = parseFloat(document.getElementById('c-pris').value)||0;
   const id = document.getElementById('c-id').value;
   const c = id ? state.credits.find(x=>x.id===id) : null;
+  const pris = c ? creditPris(c) : (parseFloat(document.getElementById('c-pris').value)||0);
   const donne = c ? creditDonne(c) : (parseFloat(document.getElementById('c-donne').value)||0);
   document.getElementById('c-rest').value = money(Math.max(0, pris-donne));
 }
@@ -1346,13 +1372,18 @@ function openCreditModal(id){
   document.getElementById('c-nom').value = c ? c.nom : '';
   document.getElementById('c-date').value = c ? c.date : todayStr();
   document.getElementById('c-motif').value = c ? (c.motif||'') : '';
-  document.getElementById('c-pris').value = c ? c.pris : '';
+  const pr = document.getElementById('c-pris');
+  pr.value = c ? creditPris(c) : '';
+  pr.readOnly = !!c;
+  pr.style.background = c ? '#EEF2F0' : '#fff';
+  document.getElementById('c-pris-label').textContent = c ? 'Total pris (voir « Ajouter un crédit »)' : 'Montant pris';
   const dn = document.getElementById('c-donne');
   dn.value = c ? creditDonne(c) : 0;
   dn.readOnly = !!c;
   dn.style.background = c ? '#EEF2F0' : '#fff';
   document.getElementById('c-donne-label').textContent = c ? 'Total déjà versé (voir « Versements »)' : 'Montant donné (acompte)';
   document.getElementById('c-add-versement').style.display = c ? '' : 'none';
+  document.getElementById('c-add-prise').style.display = c ? '' : 'none';
   recalcCredit();
   document.getElementById('overlay-credit').classList.add('active');
 }
@@ -1370,7 +1401,7 @@ function saveCredit(){
     Object.assign(c, base);
   } else {
     const donne = Math.min(pris, parseFloat(document.getElementById('c-donne').value)||0);
-    state.credits.push(Object.assign({id: uid(), donne, versements: donne>0 ? [{id:uid(), date, montant:donne}] : []}, base));
+    state.credits.push(Object.assign({id: uid(), donne, prises:[{id:uid(), date, montant:pris, motif:base.motif}], versements: donne>0 ? [{id:uid(), date, montant:donne}] : []}, base));
   }
   saveState(); closeModal('overlay-credit'); renderCredits();
 }
@@ -1379,6 +1410,51 @@ function goToVersements(){
   if(!id) return;
   closeModal('overlay-credit');
   openVersementModal(id);
+}
+function goToPrises(){
+  const id = document.getElementById('c-id').value;
+  if(!id) return;
+  closeModal('overlay-credit');
+  openPriseModal(id);
+}
+function openPriseModal(id){
+  document.getElementById('k-id').value = id;
+  document.getElementById('k-date').value = todayStr();
+  document.getElementById('k-montant').value = '';
+  document.getElementById('k-motif').value = '';
+  renderPriseModal();
+  document.getElementById('overlay-prise').classList.add('active');
+}
+function renderPriseModal(){
+  const c = state.credits.find(x=>x.id===document.getElementById('k-id').value);
+  if(!c) return;
+  document.getElementById('k-title').textContent = 'Crédits — ' + c.nom;
+  const box = (l,v)=>`<div style="background:#fff;border:1px solid var(--rule);border-radius:6px;padding:8px;text-align:center;"><div class="muted" style="font-size:11px;">${l}</div><div style="font-weight:700;font-size:13.5px;">${v}</div></div>`;
+  document.getElementById('k-summary').innerHTML = box('Total pris', money(creditPris(c))) + box('Total versé', money(creditDonne(c))) + box('Restant', money(creditRest(c)));
+  const ps = (c.prises||[]).slice().sort((a,b)=>a.date.localeCompare(b.date));
+  document.getElementById('k-list').innerHTML = ps.length
+    ? ps.map(v=>`<div class="item-line" style="justify-content:space-between;margin-bottom:6px;"><span style="flex:1;">${v.date}${v.motif?' · '+esc(v.motif):''}</span><b style="flex:1;text-align:right;">${money(v.montant)}</b><button title="Supprimer ce crédit" onclick="deletePrise('${v.id}')">✕</button></div>`).join('')
+    : '<p class="muted" style="margin:0;font-size:13px;">Aucun crédit enregistré.</p>';
+}
+function addPrise(){
+  const c = state.credits.find(x=>x.id===document.getElementById('k-id').value);
+  if(!c) return;
+  const montant = parseDecimal(document.getElementById('k-montant').value);
+  if(!(montant>0)){ alert('Entre le montant pris.'); return; }
+  c.prises.push({id:uid(), date: document.getElementById('k-date').value || todayStr(), montant, motif: document.getElementById('k-motif').value.trim()});
+  c.pris = creditPris(c);
+  document.getElementById('k-montant').value = '';
+  document.getElementById('k-motif').value = '';
+  saveState(); renderPriseModal(); renderCredits();
+}
+function deletePrise(pid){
+  const c = state.credits.find(x=>x.id===document.getElementById('k-id').value);
+  if(!c || !confirm('Supprimer ce crédit ?')) return;
+  const reste = c.prises.filter(v=>v.id!==pid);
+  if(reste.reduce((s,v)=>s+(Number(v.montant)||0),0) < creditDonne(c)){ alert('Impossible : le total pris deviendrait inférieur à ce qui a déjà été versé ('+money(creditDonne(c))+'). Supprime d\'abord un versement.'); return; }
+  c.prises = reste;
+  c.pris = creditPris(c);
+  saveState(); renderPriseModal(); renderCredits();
 }
 function openVersementModal(id){
   document.getElementById('v-id').value = id;
@@ -1393,7 +1469,7 @@ function renderVersementModal(){
   document.getElementById('v-title').textContent = 'Versements — ' + c.nom;
   const box = (label,val,cls)=>`<div style="background:#fff;border:1px solid var(--rule);border-radius:6px;padding:8px;text-align:center;"><div class="muted" style="font-size:11px;">${label}</div><div class="${cls||''}" style="font-weight:700;font-size:13.5px;">${val}</div></div>`;
   const r = creditRest(c);
-  document.getElementById('v-summary').innerHTML = box('Montant pris', money(c.pris)) + box('Total versé', money(creditDonne(c))) + box('Restant', money(r), r>0?'':'');
+  document.getElementById('v-summary').innerHTML = box('Montant pris', money(creditPris(c))) + box('Total versé', money(creditDonne(c))) + box('Restant', money(r), r>0?'':'');
   const vs = (c.versements||[]).slice().sort((a,b)=>a.date.localeCompare(b.date));
   document.getElementById('v-list').innerHTML = vs.length
     ? vs.map(v=>`<div class="item-line" style="justify-content:space-between;margin-bottom:6px;"><span style="flex:1;">${v.date}</span><b style="flex:1;text-align:right;">${money(v.montant)}</b><button title="Supprimer ce versement" onclick="deleteVersement('${v.id}')">✕</button></div>`).join('')
@@ -1445,15 +1521,17 @@ function renderCredits(){
   ${list.map(c=>{
     const r = creditRest(c);
     const n = (c.versements||[]).length;
+    const np = (c.prises||[]).length;
     return `<tr>
       <td data-label="Nom">${esc(c.nom)}</td>
       <td data-label="Date">${c.date}</td>
       <td data-label="Motif">${esc(c.motif)||'—'}</td>
-      <td data-label="Montant pris">${money(c.pris)}</td>
+      <td data-label="Montant pris">${money(creditPris(c))}<div class="muted" style="font-size:11px;">${np} crédit${np>1?'s':''}</div></td>
       <td data-label="Montant donné">${money(creditDonne(c))}<div class="muted" style="font-size:11px;">${n} versement${n>1?'s':''}</div></td>
       <td data-label="Restant" class="total-line">${money(r)}</td>
       <td data-label="Statut">${r>0 ? '<span class="pill warn">En cours</span>' : '<span class="pill ok">Soldé</span>'}</td>
       <td><div class="rowactions">
+        <button onclick="openPriseModal('${c.id}')">+ Crédit</button>
         <button onclick="openVersementModal('${c.id}')">+ Versement</button>
         <button onclick="openCreditModal('${c.id}')">Modifier</button>
         <button onclick="deleteCredit('${c.id}')">Supprimer</button>
